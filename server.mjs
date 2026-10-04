@@ -8,13 +8,13 @@ const root=resolve('public'),port=Number(process.env.PORT||3000),host=process.en
 const slots=new Set(); let calls=0;
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
 async function body(req){if(req.body!==undefined){const raw=typeof req.body==='string'?req.body:JSON.stringify(req.body);if(raw.length>3500000)throw new Error('Request too large');return JSON.parse(raw||'{}');}let raw='';for await(const c of req){raw+=c;if(raw.length>3500000)throw new Error('Request too large');}return JSON.parse(raw||'{}');}
-async function reason(prompt,image){
+async function reason(prompt,image,format={type:'json_object'}){
  if(!process.env.OPENAI_API_KEY)throw new Error('Configure OPENAI_API_KEY in .env, then restart.');
  if(calls>=250)throw new Error('Session request cap reached (250). Restart server deliberately to reset.');
  const content=[{type:'input_text',text:'Return a valid JSON object. '+prompt}];
  if(image){if(!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image))throw new Error('Invalid JPEG frame');content.push({type:'input_image',image_url:image,detail:'high'});}
  calls++;
- const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',signal:AbortSignal.timeout(45000),headers:{'content-type':'application/json','Authorization':`Bearer ${process.env.OPENAI_API_KEY.trim()}`},body:JSON.stringify({model:process.env.OPENAI_MODEL?.trim()||'gpt-4.1-mini',max_output_tokens:4000,store:false,instructions:SYSTEM,input:[{role:'user',content}],text:{format:{type:'json_object'}}})});
+ const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',signal:AbortSignal.timeout(45000),headers:{'content-type':'application/json','Authorization':`Bearer ${process.env.OPENAI_API_KEY.trim()}`},body:JSON.stringify({model:process.env.OPENAI_MODEL?.trim()||'gpt-4.1-mini',max_output_tokens:4000,store:false,instructions:SYSTEM,input:[{role:'user',content}],text:{format}})});
  if(!r.ok){
   const failure=await r.json().catch(()=>({}));
   let detail=typeof failure?.error?.message==='string'?failure.error.message:'No error detail returned.';
@@ -69,8 +69,25 @@ export default async function handler(req,res){
     if(url.pathname==='/api/observe')return json(res,200,await reason(`Describe the visible invoice workspace. Compare to the last observation: ${JSON.stringify(b.previous||'none')}. Return {"observation":"short precise visible change or current state","question":"one short question about WHY the expert made a visible decision or a guardrail; use would-you-rather only when meaningful","changed":true}. Do not invent hidden actions or policies. If no substantive change, changed=false. Recent conversation: ${JSON.stringify(b.transcript||[])}.`,b.image));
     if(url.pathname==='/api/debrief')return json(res,200,await reason(`Identify at least three distinct gaps NOT already answered in this expert session. Return {"questions":["...","...","..."],"summary":"tentative understanding; clearly label unknowns"}. Ask about decision boundaries, a changed condition, and escalation. DATA: ${JSON.stringify(b)}`));
     if(url.pathname==='/api/map'){
-     const m=await reason(`Build a Work Map ONLY from observed events and expert statements. Return {"summary":"teach-back in under one minute","steps":[{"title":"...","decision":"...","reason":"...","guardrails":[],"eventId":"exact event id","transcriptId":"exact USER utterance id","quote":"exact contiguous quote from that utterance"}],"unknowns":["unanswered questions"]}. Populate guardrails with concrete conditions and stop/escalation rules explicitly stated by the expert; use an empty array if none, never copy schema instructions as content. Distinguish observed actions from explained hypothetical exceptions: label the latter as Expert-described exception in decision, never claim it was performed. For an exception the screenshot is discussion context, not proof the exception occurred. Do not conflate cost classification with payment authorization. Keep duplicate/controller and bank-change/finance escalation rules distinct. Every step needs both valid references; omit unsupported steps, never invent words. DATA: ${JSON.stringify(b)}`);
-     return json(res,200,validateMap(m,b.events||[],b.transcript||[]));
+     const moments=b.events||[],utterances=(b.transcript||[]).filter(t=>t.role==='user'&&typeof t.text==='string'&&t.text.trim());
+     if(!moments.length||!utterances.length)throw new Error('Capture a screen moment and expert explanation before building the map.');
+     const eventRefs=moments.map((_,i)=>'E'+(i+1)),quoteRefs=utterances.map((_,i)=>'T'+(i+1));
+     const string={type:'string'},strings={type:'array',items:string};
+     const format={type:'json_schema',name:'evidence_work_map',strict:true,schema:{type:'object',additionalProperties:false,properties:{
+      summary:string,unknowns:strings,steps:{type:'array',items:{type:'object',additionalProperties:false,properties:{
+       title:string,decision:string,reason:string,guardrails:strings,eventRef:{type:'string',enum:eventRefs},transcriptRef:{type:'string',enum:quoteRefs}
+      },required:['title','decision','reason','guardrails','eventRef','transcriptRef']}}
+     },required:['summary','unknowns','steps']}};
+     const evidence={events:moments.map((e,i)=>({ref:eventRefs[i],time:e.time,observation:e.observation})),expertStatements:utterances.map((t,i)=>({ref:quoteRefs[i],time:t.time,text:t.text}))};
+     const m=await reason(`Build a Work Map ONLY from this evidence. Select a listed eventRef and transcriptRef for each step. The server will copy the actual expert quote; do not compose quotes. Every claim in a step must be supported by its selected expert statement. Split steps if different statements support different rules. Populate guardrails with actual expert-stated stop conditions, never placeholder instructions. Label hypothetical exceptions as "Expert-described exception" in decision; never claim they were performed. For these exceptions, the screenshot is discussion context, not proof the exception occurred. Keep classification separate from payment approval, and duplicate/controller review separate from bank-change/finance review. Unknown or conflicting policies belong in unknowns. Return a concise teach-back summary and supported steps. DATA: ${JSON.stringify(evidence)}`,undefined,format);
+     if(!Array.isArray(m.steps))throw new Error('Map did not include steps.');
+     m.steps=m.steps.map(s=>{
+      const event=moments[eventRefs.indexOf(s.eventRef)],utterance=utterances[quoteRefs.indexOf(s.transcriptRef)];
+      if(!event||!utterance)throw new Error('Map selected an unavailable evidence reference.');
+      const {eventRef,transcriptRef,...step}=s;
+      return {...step,eventId:event.id,transcriptId:utterance.id,quote:utterance.text};
+     });
+     return json(res,200,validateMap(m,moments,utterances));
     }
     if(url.pathname==='/api/check'){
      if(!b.map?.confirmed)throw new Error('Expert confirmation is required before teaching.');
