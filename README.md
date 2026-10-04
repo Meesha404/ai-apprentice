@@ -4,6 +4,21 @@ A voice-powered apprentice that observes a fictional invoice workflow, asks what
 
 **Status:** first functional implementation. Automated evidence-validation tests and local build are available. Live OpenAI / ElevenLabs calls and microphone/screen behavior require your keys and a real browser test. No mock AI or canned learned policies are returned when credentials are absent.
 
+## Deploy a shareable Vercel demo (recommended)
+
+1. In Vercel, Add New → Project → import `Meesha404/ai-apprentice`.
+2. Framework: Other. Build command: `npm run build`. Output directory: `public`. Keep the repository root as Root Directory. The tracked `vercel.json` supplies these settings.
+3. Add environment variables before deploying:
+   - `OPENAI_API_KEY`: your private OpenAI API key with Responses Write access.
+   - `OPENAI_MODEL`: `gpt-4.1-mini`.
+   - `ELEVENLABS_API_KEY`: your private ElevenLabs key.
+   - `ELEVENLABS_AGENT_ID`: the published agent ID.
+   - `DEMO_ACCESS_CODE`: choose a private code of at least 12 characters; share this code with judges, never API keys.
+4. Deploy. Open the production HTTPS URL, enter the demo access code, and connect voice. If you change environment variables later, redeploy.
+5. Open the invoice sandbox from the same production URL and share its tab. Keep the main app tab open. Both tabs must have the same origin.
+
+The interface is publicly reachable; paid API actions require the demo code. Hosting is prepared but not yet verified on an actual Vercel deployment. The code is a small-demo gate, not individual user authentication. Anyone with it can consume provider credits. In-memory request caps reset on cold starts and do not apply globally across Vercel instances; use provider spending controls. No server-side evidence persistence is enabled. ElevenLabs WebSocket traffic flows directly from the browser to ElevenLabs, not through a Vercel WebSocket server.
+
 ## Run on your Mac
 
 If using the ZIP, extract it and open Terminal in its `ai-apprentice` folder, then run `npm install` and `cp .env.example .env`. The clone instructions below apply after the source has been uploaded to GitHub.
@@ -69,7 +84,7 @@ Vanilla browser UI + bundled `@elevenlabs/client`; Node.js HTTP server; OpenAI R
 
 Synthetic data only. Avoid sharing the role card, passwords, other applications or real personal data. Automatic PII redaction is **not implemented**. The capture selector and synthetic-only workflow are the current protections. A production version needs redaction, deletion controls, retention policy and stronger access controls.
 
-The server binds to localhost by default. **Do not expose it publicly as-is:** authenticated access, rate limits per user, durable secure storage and provider billing controls are required before a public demo. GitHub Pages alone cannot run the private-key server. HTTPS is required outside localhost for browser media permissions.
+The server binds to localhost by default. On Vercel, paid API endpoints fail closed until a 12+ character DEMO_ACCESS_CODE is configured. Wider production access needs individual authentication, distributed rate limiting, durable secure storage and provider billing controls. GitHub Pages alone cannot run the private-key server. HTTPS is required outside localhost for browser media permissions.
 
 ## Validation and remaining demo gates
 
