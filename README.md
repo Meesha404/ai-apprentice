@@ -2,7 +2,7 @@
 
 A voice-powered apprentice that observes a fictional invoice workflow, asks what changes the expert's mind, builds an evidence-linked Work Map, and checks a new trainee's decisions before saving.
 
-**Status:** first functional implementation. Automated evidence-validation tests and local build are available. Live Anthropic / ElevenLabs calls and microphone/screen behavior require your keys and a real browser test. No mock AI or canned learned policies are returned when credentials are absent.
+**Status:** first functional implementation. Automated evidence-validation tests and local build are available. Live OpenAI / ElevenLabs calls and microphone/screen behavior require your keys and a real browser test. No mock AI or canned learned policies are returned when credentials are absent.
 
 ## Run on your Mac
 
@@ -17,7 +17,7 @@ npm install
 cp .env.example .env
 ```
 
-Open `.env` in a text editor. Fill in ANTHROPIC_API_KEY, ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID. Never share the keys or commit `.env`. ANTHROPIC_MODEL is configurable; the default is `claude-sonnet-4-5`. Change it to a vision-capable model available in your account if needed.
+Open `.env` in a text editor. Fill in OPENAI_API_KEY, ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID. Never share the keys or commit `.env`. OPENAI_MODEL is configurable; the default is `gpt-4.1-mini`. Change it to a vision-capable model available in your account if needed.
 
 ```bash
 npm run build
@@ -46,7 +46,7 @@ Open http://127.0.0.1:3000 in desktop Chrome. Allow microphone and screen record
 
 ## What is implemented
 
-- Browser screen sharing; resized JPEG frames → Anthropic vision; visible-change events with timestamps.
+- Browser screen sharing; resized JPEG frames → OpenAI vision; visible-change events with timestamps.
 - ElevenLabs Agents SDK voice with contextual screen updates, transcript and audio-level handling.
 - Conservative question timing: workspace activity, microphone volume, agent speaking state, and a 45-second question cooldown. Reading cannot be reliably detected; manual readiness is available. This is a heuristic, not a perfect natural-pause detector.
 - At least three generated debrief questions; expert teach-back; exact-quote and event-ID validation of map entries.
@@ -57,13 +57,13 @@ Open http://127.0.0.1:3000 in desktop Chrome. Allow microphone and screen record
 
 ## Architecture
 
-Vanilla browser UI + bundled `@elevenlabs/client`; Node.js HTTP server; Anthropic Messages API; ElevenLabs signed conversation URLs. Same-origin BroadcastChannel carries sandbox activity and pre-save checks; both tabs must use the exact same host and port. Activity signals support timing and save interception; screenshot vision is the source of captured screen evidence.
+Vanilla browser UI + bundled `@elevenlabs/client`; Node.js HTTP server; OpenAI Responses API; ElevenLabs signed conversation URLs. Same-origin BroadcastChannel carries sandbox activity and pre-save checks; both tabs must use the exact same host and port. Activity signals support timing and save interception; screenshot vision is the source of captured screen evidence.
 
-`POST /api/observe`, `/api/debrief`, `/api/map`, `/api/check` call Anthropic. `POST /api/voice` obtains the ElevenLabs signed URL. Keys stay server-side. The map is expert-reviewed training data; it is not a production financial control and a local developer can alter it.
+`POST /api/observe`, `/api/debrief`, `/api/map`, `/api/check` call OpenAI. `POST /api/voice` obtains the ElevenLabs signed URL. Keys stay server-side. The map is expert-reviewed training data; it is not a production financial control and a local developer can alter it.
 
 ## Costs and limits
 
-60 frame analyses per page session; 250 total Anthropic calls per server process; one in-flight request per endpoint. This is a request cap, not a guaranteed dollar limit. Configure provider spending alerts/limits. No polling when screen content is unchanged. Text/debrief/map operations also cost tokens. SDK voice sessions incur provider usage separately.
+60 frame analyses per page session; 250 total OpenAI calls per server process; one in-flight request per endpoint. This is a request cap, not a guaranteed dollar limit. Configure provider spending alerts/limits. No polling when screen content is unchanged. Text/debrief/map operations also cost tokens. SDK voice sessions incur provider usage separately.
 
 ## Privacy / deployment
 
@@ -80,9 +80,11 @@ Before submission: validate your keys/model access; test microphone and shared t
 ## Sources
 
 - https://elevenlabs.io/docs/eleven-agents/libraries/java-script
-- https://platform.claude.com/docs/en/build-with-claude/vision
+- https://developers.openai.com/api/docs/guides/images-vision
 - Hack-Nation Challenge 1 brief provided by the entrant.
 
 ## Moonshot
 
 An expert-approved memory of how work is decided, with every exception traceable to its source. Future sessions ask only about changed rules; people and automation share the same reviewed guardrails.
+
+Provider update: OpenAI is now the application backend for vision and structured reasoning. Existing installs should run `git pull`, set OPENAI_API_KEY in .env, run `npm run build`, and restart. The ElevenLabs dashboard LLM setting is separate and need not change. No live OpenAI call has been tested without your key.
