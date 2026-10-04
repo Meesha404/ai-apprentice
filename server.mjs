@@ -1,11 +1,13 @@
 import http from 'node:http';
+import {pathToFileURL} from 'node:url';
+import {timingSafeEqual} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {SYSTEM,validateMap,validateVerdict} from './logic.mjs';
 const root=resolve('public'),port=Number(process.env.PORT||3000),host=process.env.HOST||'127.0.0.1';
 const slots=new Set(); let calls=0;
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
-async function body(req){let raw='';for await(const c of req){raw+=c;if(raw.length>3500000)throw new Error('Request too large');}return JSON.parse(raw||'{}');}
+async function body(req){if(req.body!==undefined){const raw=typeof req.body==='string'?req.body:JSON.stringify(req.body);if(raw.length>3500000)throw new Error('Request too large');return JSON.parse(raw||'{}');}let raw='';for await(const c of req){raw+=c;if(raw.length>3500000)throw new Error('Request too large');}return JSON.parse(raw||'{}');}
 async function reason(prompt,image){
  if(!process.env.OPENAI_API_KEY)throw new Error('Configure OPENAI_API_KEY in .env, then restart.');
  if(calls>=250)throw new Error('Session request cap reached (250). Restart server deliberately to reset.');
@@ -20,14 +22,18 @@ async function reason(prompt,image){
  if(!text)throw new Error('OpenAI returned no JSON output. The request may have been refused.');
  return JSON.parse(text);
 }
-http.createServer(async(req,res)=>{
+export default async function handler(req,res){
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
  const url=new URL(req.url,'http://localhost');
  try{
   if(url.pathname.startsWith('/api/')){
    if(req.headers.origin && new URL(req.headers.origin).host!==req.headers.host)return json(res,403,{error:'Cross-origin request denied'});
-   if(url.pathname==='/api/status'&&req.method==='GET')return json(res,200,{openai:!!process.env.OPENAI_API_KEY,elevenlabs:!!process.env.ELEVENLABS_API_KEY,agent:!!process.env.ELEVENLABS_AGENT_ID,requests:calls});
+   if(url.pathname==='/api/status'&&req.method==='GET')return json(res,200,{openai:!!process.env.OPENAI_API_KEY,elevenlabs:!!process.env.ELEVENLABS_API_KEY,agent:!!process.env.ELEVENLABS_AGENT_ID,requests:calls,accessRequired:!!process.env.DEMO_ACCESS_CODE||!!process.env.VERCEL});
    if(req.method!=='POST')return json(res,405,{error:'POST required'});
+   const access=process.env.DEMO_ACCESS_CODE;
+   if(process.env.VERCEL && (!access||access.length<12))return json(res,503,{error:'Set DEMO_ACCESS_CODE to at least 12 characters in Vercel, then redeploy.'});
+   if(access){const actual=Buffer.from(req.headers['x-demo-code']||''),expected=Buffer.from(access);if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return json(res,401,{error:'Enter the correct demo access code using Demo access in the header.'});}
+
    const b=await body(req);
    if(slots.has(url.pathname))return json(res,429,{error:'A request is already running. Please wait.'});
    slots.add(url.pathname);
@@ -58,4 +64,5 @@ http.createServer(async(req,res)=>{
   const file=resolve(root,name);if(!file.startsWith(root+'/')){res.writeHead(403);return res.end();}
   const data=await readFile(file);res.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json'})[extname(file)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);
  }catch(e){json(res,400,{error:e.code==='ENOENT'?'File not found. Run npm run build first.':e.message});}
-}).listen(port,host,()=>console.log(`AI Apprentice: http://${host}:${port} (local development; no public authentication)`));
+}
+if(process.argv[1] && import.meta.url===pathToFileURL(resolve(process.argv[1])).href){http.createServer(handler).listen(port,host,()=>console.log(`AI Apprentice: http://${host}:${port}`));}
