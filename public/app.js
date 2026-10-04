@@ -13,7 +13,7 @@ const video=$('#preview'),canvas=document.createElement('canvas');
 const tiny=document.createElement('canvas');tiny.width=32;tiny.height=20;
 function notice(t){$('#notice').textContent=t;}
 function uid(){return crypto.randomUUID();}
-async function api(path,payload){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','x-demo-code':demoCode},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');return d;}
+async function api(path,payload){if(!demoCode){$('#accessDialog').showModal();throw new Error('Enter the demo access code, then retry this action. You can inspect the example without a code.');}const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','x-demo-code':demoCode},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');return d;}
 function page(name){document.querySelectorAll('.page').forEach(p=>p.hidden=p.id!==name);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===name));}
 document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>page(b.dataset.page));
 function utterance(role,text){if(paused||!text)return;state.transcript.push({id:uid(),role,text,time:new Date().toISOString(),eventId:state.events.at(-1)?.id||null,stage:state.stage});if(role==='user'&&state.map&&state.stage!=='teach'){state.map.confirmed=false;$('#confirmed').checked=false;}renderTranscript();saveSession();}
@@ -44,7 +44,7 @@ channel.onmessage=async({data:d})=>{if(d.type==='activity'){activity();return;}i
 $('#export').onclick=()=>{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify({...state,exportedAt:new Date().toISOString(),synthetic:true},null,2)],{type:'application/json'}));a.href=url;a.download='understudy-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('#reset').onclick=()=>run(async()=>{if(!confirm('Clear this local session? Export it first if needed. Provider-held records are not deleted.'))return;generation++;if(voice)await voice.endSession();if(stream)stream.getTracks().forEach(t=>t.stop());storageReady=false;clearTimeout(saveTimer);await sessionStore('delete');location.reload();});
 async function run(fn){try{await storageLoaded;notice('');await fn();saveSession();}catch(e){notice(e.message);}}
-fetch('/api/status').then(r=>r.json()).then(s=>{if(s.accessRequired&&!demoCode)$('#accessDialog').showModal();$('#connection').textContent=s.openai&&s.elevenlabs&&s.agent?'Keys configured · connection untested':'Setup required';if(!s.openai||!s.elevenlabs||!s.agent)notice('Add API keys and the ElevenLabs agent ID to your local .env file, then restart. See README. No AI responses are simulated.');}).catch(()=>notice('Server unavailable. Start with npm start.'));
+fetch('/api/status').then(r=>r.json()).then(s=>{$('#connection').textContent=s.openai&&s.elevenlabs&&s.agent?'Keys configured · connection untested':'Setup required';if(!s.openai||!s.elevenlabs||!s.agent)notice('Add API keys and the ElevenLabs agent ID to your local .env file, then restart. See README. No AI responses are simulated.');}).catch(()=>notice('Server unavailable. Start with npm start.'));
 
 let storageReady=false,saveTimer;
 const storageStatus=document.createElement('small');
@@ -93,6 +93,8 @@ function restoreSession(data){
  $('#gaps').innerHTML=state.gaps.map((q,i)=>'<p>'+(i+1)+'. '+esc(q)+'</p>').join('');
  $('#steps').innerHTML='';$('#summary').textContent='';$('#unknowns').textContent='';$('#confirmed').checked=false;$('#practice').innerHTML='';
  if(map)renderMap();
+ state.example=data.example&&typeof data.example.description==='string'?{description:data.example.description}:null;
+ $('#exampleNotice').hidden=!state.example;$('#exampleNotice').textContent=state.example?.description||'';
  if(map||state.gaps.length)page('map');
 }
 const storageLoaded=(async()=>{
@@ -112,3 +114,13 @@ importInput.onchange=()=>run(async()=>{
 document.querySelectorAll('.privacy').forEach(el=>{
  if(el.textContent.includes('Session evidence stays in this tab until exported.'))el.textContent=el.textContent.replace('Session evidence stays in this tab until exported.','Session evidence is saved in this browser until you clear it; export a backup to move it.');
 });
+
+async function loadExampleSession(){
+ const response=await fetch('/example-session.json');if(!response.ok)throw new Error('Example session could not load. Please retry.');
+ const data=await response.json();
+ if((state.events.length||state.transcript.length)&&!confirm('Load the recorded example in place of this session? Export your current session first if needed.'))return;
+ generation++;if(voice)await voice.endSession();voice=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;
+ video.srcObject=null;video.style.display='none';$('#screenEmpty').hidden=false;$('#screenStatus').textContent='Not sharing';
+ restoreSession(data);notice('Recorded example loaded. Review the quotes and screen evidence, confirm the draft map, then open Teach someone new. The tutor test will run live.');
+}
+document.querySelectorAll('[data-load-example]').forEach(button=>button.onclick=()=>run(loadExampleSession));
