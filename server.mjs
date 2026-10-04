@@ -91,7 +91,7 @@ export default async function handler(req,res){
     }
     if(url.pathname==='/api/check'){
      if(!b.map?.confirmed)throw new Error('Expert confirmation is required before teaching.');
-     const v=validateVerdict(await reason(`Assess the learner's pending save ONLY using this confirmed Work Map. Return {"verdict":"allow|block|unknown","reason":"explanation grounded in expert's words","stepIndex":0,"question":"ask learner to explain next decision"}. Use unknown if policy does not cover the case. A block must reference the supporting stepIndex. DATA: ${JSON.stringify(b)}`));
+     const v=validateVerdict(await reason(`Assess the learner's pending save ONLY using this confirmed Work Map. Return {"verdict":"allow|block|unknown","reason":"explanation grounded in expert's words","stepIndex":0,"question":"ask learner to explain next decision"}. Use unknown if policy does not cover the case. A block must reference the supporting stepIndex, using the explicit zero-based stepIndex labels in DATA. In reason and question, refer to the rule by its title or content: NEVER write step numbers, Step 0, or stepIndex. The UI adds the human-readable citation. Assess classification and payment disposition separately. Check ALL applicable confirmed guardrails before allowing a save; a classification rule never implies unconditional payment approval. Explain hold exceptions when relevant. DATA: ${JSON.stringify({...b,map:{...b.map,steps:b.map.steps.map((s,stepIndex)=>({...s,stepIndex}))}})}`));
      if(v.verdict==='block' && !b.map.steps[v.stepIndex])throw new Error('Tutor could not link its intervention to evidence.');
      return json(res,200,v);
     }
