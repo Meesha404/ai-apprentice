@@ -40,8 +40,22 @@ export default async function handler(req,res){
    try{
     if(url.pathname==='/api/voice'){
      if(!process.env.ELEVENLABS_API_KEY||!process.env.ELEVENLABS_AGENT_ID)throw new Error('Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in .env.');
-     const r=await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(process.env.ELEVENLABS_AGENT_ID)}`,{headers:{'xi-api-key':process.env.ELEVENLABS_API_KEY},signal:AbortSignal.timeout(20000)});
-     if(!r.ok)throw new Error(`ElevenLabs returned ${r.status}. Check your agent ID and key permissions.`);
+     const r=await fetch(`https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(process.env.ELEVENLABS_AGENT_ID.trim())}`,{headers:{'xi-api-key':process.env.ELEVENLABS_API_KEY.trim()},signal:AbortSignal.timeout(20000)});
+     if(!r.ok){
+      const failure=await r.json().catch(()=>({}));
+      const status=failure?.detail?.status;
+      const hints={
+       invalid_api_key:'The API key was rejected. Replace ELEVENLABS_API_KEY in Vercel with an active key, then redeploy.',
+       missing_permissions:'The API key is missing a required permission. Check the ElevenAgents permission on the exact key saved in Vercel.',
+       agent_not_found:'The agent was not found or is not accessible. Check that the agent ID and API key belong to the same ElevenLabs workspace.',
+       quota_exceeded:'The ElevenLabs credit quota has been reached.',
+       key_disabled:'The API key is disabled. Replace it in Vercel with an active key, then redeploy.'
+      };
+      const hint=Object.hasOwn(hints,status)?hints[status]:'Check the active API key, its ElevenAgents permission, and whether the agent belongs to the same workspace.';
+      // Only display known status codes and our own messages, never raw provider text or credentials.
+      const code=Object.hasOwn(hints,status)?' ('+status+')':'';
+      throw new Error('ElevenLabs returned '+r.status+code+'. '+hint);
+     }
      return json(res,200,await r.json());
     }
     if(url.pathname==='/api/observe')return json(res,200,await reason(`Describe the visible invoice workspace. Compare to the last observation: ${JSON.stringify(b.previous||'none')}. Return {"observation":"short precise visible change or current state","question":"one short question about WHY the expert made a visible decision or a guardrail; use would-you-rather only when meaningful","changed":true}. Do not invent hidden actions or policies. If no substantive change, changed=false. Recent conversation: ${JSON.stringify(b.transcript||[])}.`,b.image));
