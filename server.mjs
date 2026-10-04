@@ -11,11 +11,19 @@ async function body(req){if(req.body!==undefined){const raw=typeof req.body==='s
 async function reason(prompt,image){
  if(!process.env.OPENAI_API_KEY)throw new Error('Configure OPENAI_API_KEY in .env, then restart.');
  if(calls>=250)throw new Error('Session request cap reached (250). Restart server deliberately to reset.');
- const content=[{type:'input_text',text:prompt}];
+ const content=[{type:'input_text',text:'Return a valid JSON object. '+prompt}];
  if(image){if(!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image))throw new Error('Invalid JPEG frame');content.push({type:'input_image',image_url:image,detail:'high'});}
  calls++;
- const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',signal:AbortSignal.timeout(45000),headers:{'content-type':'application/json','Authorization':`Bearer ${process.env.OPENAI_API_KEY}`},body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-4.1-mini',max_output_tokens:4000,store:false,instructions:SYSTEM,input:[{role:'user',content}],text:{format:{type:'json_object'}}})});
- if(!r.ok)throw new Error(`OpenAI returned ${r.status}. Check API credit, model access and key permissions.`);
+ const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',signal:AbortSignal.timeout(45000),headers:{'content-type':'application/json','Authorization':`Bearer ${process.env.OPENAI_API_KEY.trim()}`},body:JSON.stringify({model:process.env.OPENAI_MODEL?.trim()||'gpt-4.1-mini',max_output_tokens:4000,store:false,instructions:SYSTEM,input:[{role:'user',content}],text:{format:{type:'json_object'}}})});
+ if(!r.ok){
+  const failure=await r.json().catch(()=>({}));
+  let detail=typeof failure?.error?.message==='string'?failure.error.message:'No error detail returned.';
+  for(const name of ['OPENAI_API_KEY','ELEVENLABS_API_KEY','DEMO_ACCESS_CODE']){
+   const secret=process.env[name]?.trim();if(secret)detail=detail.split(secret).join('[redacted]');
+  }
+  detail=detail.replace(/sk-[A-Za-z0-9_-]+/g,'[redacted key]').replace(/data:image[^\\s"']+/g,'[image omitted]').slice(0,700);
+  throw new Error('OpenAI returned '+r.status+': '+detail);
+ }
  const data=await r.json();
  if(data.status!=='completed')throw new Error('OpenAI response was incomplete. Retry or increase the output token limit.');
  const text=(data.output||[]).flatMap(item=>item.content||[]).filter(c=>c.type==='output_text').map(c=>c.text).join('');
