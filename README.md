@@ -13,7 +13,7 @@ A voice-powered apprentice that observes a fictional invoice workflow, asks what
    - `OPENAI_MODEL`: `gpt-4.1-mini`.
    - `ELEVENLABS_API_KEY`: your private ElevenLabs key.
    - `ELEVENLABS_AGENT_ID`: the published agent ID.
-   - `DEMO_ACCESS_CODE`: choose a private code of at least 12 characters; share this code with judges, never API keys.
+   - `DEMO_ACCESS_CODE`: meesha041026
 4. Deploy. Open the production HTTPS URL, enter the demo access code, and connect voice. If you change environment variables later, redeploy.
 5. Open the invoice sandbox from the same production URL and share its tab. Keep the main app tab open. Both tabs must have the same origin.
 
