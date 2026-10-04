@@ -1,16 +1,19 @@
 import {Conversation} from '@elevenlabs/client';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const channel=new BroadcastChannel('understudy');
+let demoCode=sessionStorage.getItem('understudy-demo-code')||'';
+$('#access').onclick=()=>$('#accessDialog').showModal();
+$('#saveAccess').onclick=()=>{demoCode=$('#accessCode').value.trim();sessionStorage.setItem('understudy-demo-code',demoCode);$('#accessCode').value='';notice('Demo access code saved for this tab. Try connecting voice.');};
 const state={events:[],transcript:[],map:null,gaps:[],gapIndex:0,practice:[],stage:'capture'};
 let voice=null,stream=null,paused=false,busy=false,generation=0,lastActivity=Date.now(),lastVoice=Date.now(),lastRequest=0,lastQuestion=0,previous='',fingerprint='',candidate=null,voiceMode='listening',captureCount=0;
 const video=$('#preview'),canvas=document.createElement('canvas');
 const tiny=document.createElement('canvas');tiny.width=32;tiny.height=20;
 function notice(t){$('#notice').textContent=t;}
 function uid(){return crypto.randomUUID();}
-async function api(path,payload){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');return d;}
+async function api(path,payload){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','x-demo-code':demoCode},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');return d;}
 function page(name){document.querySelectorAll('.page').forEach(p=>p.hidden=p.id!==name);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===name));}
 document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>page(b.dataset.page));
-function utterance(role,text){if(paused||!text)return;state.transcript.push({id:uid(),role,text,time:new Date().toISOString(),eventId:state.events.at(-1)?.id||null,stage:state.stage});if(role==='user'&&state.map){state.map.confirmed=false;$('#confirmed').checked=false;}renderTranscript();}
+function utterance(role,text){if(paused||!text)return;state.transcript.push({id:uid(),role,text,time:new Date().toISOString(),eventId:state.events.at(-1)?.id||null,stage:state.stage});if(role==='user'&&state.map&&state.stage!=='teach'){state.map.confirmed=false;$('#confirmed').checked=false;}renderTranscript();}
 function renderTranscript(){$('#transcript').innerHTML=state.transcript.map(t=>`<div class="utterance"><b>${t.role==='user'?'EXPERT / LEARNER':'APPRENTICE'} · ${new Date(t.time).toLocaleTimeString()}</b>${esc(t.text)}</div>`).join('');$('#transcript').scrollTop=$('#transcript').scrollHeight;}
 function events(){$('#events').innerHTML=state.events.map(e=>`<div class="event">${e.image?`<img src="${e.image}" alt="Captured fictional invoice screen">`:''}<small>${new Date(e.time).toLocaleTimeString()} · ${esc(e.source)}</small>${esc(e.observation)}</div>`).join('');$('#count').textContent=`${state.events.length} moments`;}
 function sendPrompt(text){if(paused)throw new Error('Resume recording first.');$('#question').textContent=text;if(voice){voice.sendUserMessage('[APP QUESTION REQUEST — ask the following naturally, then wait for my answer] '+text);}else{utterance('agent',text);notice('Voice is disconnected. Question shown in text; this is not a live voice demonstration.');}lastQuestion=Date.now();candidate=null;}
@@ -38,4 +41,4 @@ channel.onmessage=async({data:d})=>{if(d.type==='activity'){activity();return;}i
 $('#export').onclick=()=>{const a=document.createElement('a'),url=URL.createObjectURL(new Blob([JSON.stringify({...state,exportedAt:new Date().toISOString(),synthetic:true},null,2)],{type:'application/json'}));a.href=url;a.download='understudy-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('#reset').onclick=()=>run(async()=>{if(!confirm('Clear this local session? Export it first if needed. Provider-held records are not deleted.'))return;generation++;if(voice)await voice.endSession();if(stream)stream.getTracks().forEach(t=>t.stop());location.reload();});
 async function run(fn){try{notice('');await fn();}catch(e){notice(e.message);}}
-fetch('/api/status').then(r=>r.json()).then(s=>{$('#connection').textContent=s.openai&&s.elevenlabs&&s.agent?'Keys configured · connection untested':'Setup required';if(!s.openai||!s.elevenlabs||!s.agent)notice('Add API keys and the ElevenLabs agent ID to your local .env file, then restart. See README. No AI responses are simulated.');}).catch(()=>notice('Server unavailable. Start with npm start.'));
+fetch('/api/status').then(r=>r.json()).then(s=>{if(s.accessRequired&&!demoCode)$('#accessDialog').showModal();$('#connection').textContent=s.openai&&s.elevenlabs&&s.agent?'Keys configured · connection untested':'Setup required';if(!s.openai||!s.elevenlabs||!s.agent)notice('Add API keys and the ElevenLabs agent ID to your local .env file, then restart. See README. No AI responses are simulated.');}).catch(()=>notice('Server unavailable. Start with npm start.'));
