@@ -3,8 +3,27 @@ import {Conversation} from '@elevenlabs/client';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const channel=new BroadcastChannel('understudy');
 let demoCode=sessionStorage.getItem('understudy-demo-code')||'';
-$('#access').onclick=()=>$('#accessDialog').showModal();
-$('#saveAccess').onclick=()=>{demoCode=$('#accessCode').value.trim();sessionStorage.setItem('understudy-demo-code',demoCode);$('#accessCode').value='';notice('Demo access code saved for this tab. Try connecting voice.');};
+const accessDialog=$('#accessDialog'),accessForm=accessDialog.querySelector('form'),accessInput=$('#accessCode');
+let accessPending=null;
+const accessError=document.createElement('p');accessError.setAttribute('role','alert');accessInput.after(accessError);
+const cancelAccess=accessForm.querySelector('button[value="cancel"]');cancelAccess.type='button';cancelAccess.onclick=()=>accessDialog.close('cancel');
+function requestAccess(message=''){
+ accessError.textContent=message;
+ if(accessPending)return accessPending;
+ accessInput.value='';accessDialog.returnValue='';
+ accessPending=new Promise(resolve=>{
+  accessDialog.addEventListener('close',()=>{const saved=accessDialog.returnValue==='save';accessPending=null;resolve(saved);},{once:true});
+ });
+ accessDialog.showModal();accessInput.focus();return accessPending;
+}
+$('#access').textContent=demoCode?'Change demo code':'Demo access';
+$('#access').onclick=()=>requestAccess();
+accessForm.onsubmit=e=>{
+ e.preventDefault();const code=accessInput.value.trim();
+ if(!code){accessError.textContent='Enter the demo code to continue.';accessInput.focus();return;}
+ demoCode=code;sessionStorage.setItem('understudy-demo-code',demoCode);accessInput.value='';
+ $('#access').textContent='Change demo code';notice('Demo code saved for this tab.');accessDialog.close('save');
+};
 const state={events:[],transcript:[],map:null,gaps:[],gapIndex:0,practice:[],stage:'capture'};
 let voice=null,stream=null,paused=false,busy=false,generation=0,lastActivity=Date.now(),lastVoice=Date.now(),lastRequest=0,lastQuestion=0,previous='',fingerprint='',candidate=null,voiceMode='listening',captureCount=0;
 let latestVision=null;
@@ -13,7 +32,19 @@ const video=$('#preview'),canvas=document.createElement('canvas');
 const tiny=document.createElement('canvas');tiny.width=32;tiny.height=20;
 function notice(t){$('#notice').textContent=t;}
 function uid(){return crypto.randomUUID();}
-async function api(path,payload){if(!demoCode){$('#accessDialog').showModal();throw new Error('Enter the demo access code, then retry this action. You can inspect the example without a code.');}const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','x-demo-code':demoCode},body:JSON.stringify(payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');return d;}
+async function api(path,payload){
+ if(!demoCode&&!await requestAccess())throw new Error('Demo access cancelled.');
+ while(true){
+  const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','x-demo-code':demoCode},body:JSON.stringify(payload)});
+  const d=await r.json();
+  if(r.status===401){
+   demoCode='';sessionStorage.removeItem('understudy-demo-code');$('#access').textContent='Demo access';
+   if(!await requestAccess('That code was not accepted. Check it and try again.'))throw new Error('Demo access cancelled.');
+   continue;
+  }
+  if(!r.ok)throw new Error(d.error||'Request failed');return d;
+ }
+}
 function page(name){document.querySelectorAll('.page').forEach(p=>p.hidden=p.id!==name);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===name));}
 document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>page(b.dataset.page));
 function utterance(role,text){if(paused||!text)return;state.transcript.push({id:uid(),role,text,time:new Date().toISOString(),eventId:state.events.at(-1)?.id||null,stage:state.stage});if(role==='user'&&state.map&&state.stage!=='teach'){state.map.confirmed=false;$('#confirmed').checked=false;}renderTranscript();saveSession();}
